@@ -55,13 +55,13 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
     [Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
     Write-Host "ERROR: Run this script from an elevated (Administrator) PowerShell prompt." -ForegroundColor Red
-    exit 1
+    return
 }
 
 function Write-Step { param($msg) Write-Host "`n>> $msg" -ForegroundColor Cyan }
 function Write-OK   { param($msg) Write-Host "   [OK] $msg" -ForegroundColor Green }
 function Write-Warn { param($msg) Write-Host "   [!!] $msg" -ForegroundColor Yellow }
-function Write-Fail { param($msg) Write-Host "   [XX] $msg" -ForegroundColor Red; exit 1 }
+function Write-Fail { param($msg) Write-Host "   [XX] $msg" -ForegroundColor Red; throw $msg }
 
 # -- Uninstall ----------------------------------------------------------------
 if ($Uninstall) {
@@ -76,7 +76,7 @@ if ($Uninstall) {
     Write-OK "Firewall rule removed (if existed)"
     Write-Host ""
     Write-Host "To remove files: Remove-Item '$InstallPath' -Recurse -Force" -ForegroundColor Yellow
-    exit 0
+    return
 }
 
 Write-Host ""
@@ -168,7 +168,7 @@ if ($Update) {
     Write-Host ""
     Write-Host "  EZ AD updated successfully." -ForegroundColor Green
     Write-Host ""
-    exit 0
+    return
 }
 
 # -- Fresh install: prompt for password if not provided -----------------------
