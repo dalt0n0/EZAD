@@ -75,9 +75,13 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
     queryFn: () => fetch(`/api/ad/users/${encodeURIComponent(id)}`).then((r) => r.json()),
   });
 
-  const { data: rsop, isLoading: rsopLoading } = useQuery<RSoPResult>({
+  const { data: rsop, isLoading: rsopLoading } = useQuery<RSoPResult | null>({
     queryKey: ["rsop", id],
-    queryFn: () => fetch(`/api/rsop/${encodeURIComponent(id)}`).then((r) => r.json()),
+    queryFn: async () => {
+      const res = await fetch(`/api/rsop/${encodeURIComponent(id)}`);
+      if (!res.ok) return null;
+      return res.json() as Promise<RSoPResult>;
+    },
     enabled: !!user,
     retry: false,
   });

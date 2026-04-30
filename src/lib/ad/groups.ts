@@ -3,6 +3,22 @@ import type { ADGroup, ADGroupMember, ADSearchResult } from "@/types/ad";
 
 const GROUP_PROPS = "Name,SamAccountName,DistinguishedName,GroupCategory,GroupScope,Description,Created,Modified,MemberOf,ObjectGUID,CanonicalName,ManagedBy";
 
+const GROUP_CATEGORY_MAP = ["Security", "Distribution"] as const;
+const GROUP_SCOPE_MAP = ["DomainLocal", "Global", "Universal"] as const;
+
+function normalizeGroup(g: ADGroup): ADGroup {
+  if (typeof (g.GroupCategory as unknown) === "number") {
+    g.GroupCategory = GROUP_CATEGORY_MAP[(g.GroupCategory as unknown as number)] ?? "Security";
+  }
+  if (typeof (g.GroupScope as unknown) === "number") {
+    g.GroupScope = GROUP_SCOPE_MAP[(g.GroupScope as unknown as number)] ?? "Global";
+  }
+  if (g.MemberOf != null && !Array.isArray(g.MemberOf)) {
+    (g as Record<string, unknown>).MemberOf = [g.MemberOf];
+  }
+  return g;
+}
+
 export async function listGroups(search?: string): Promise<ADGroup[]> {
   const filter = search
     ? `-Filter {(Name -like '*${sanitizeForPS(search)}*') -or (SamAccountName -like '*${sanitizeForPS(search)}*')}`
@@ -15,7 +31,8 @@ Get-ADGroup ${filter} -Properties ${GROUP_PROPS} |
   ${toJson(3)}
 `);
 
-  return Array.isArray(raw) ? raw : raw ? [raw] : [];
+  const arr = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  return arr.map(normalizeGroup);
 }
 
 export async function getGroup(samAccountName: string): Promise<ADGroup> {
@@ -26,7 +43,7 @@ Get-ADGroup -Identity '${safeId}' -Properties * |
   Select-Object ${GROUP_PROPS} |
   ${toJson(5)}
 `);
-  return raw;
+  return normalizeGroup(raw);
 }
 
 export async function getGroupMembers(samAccountName: string): Promise<ADGroupMember[]> {

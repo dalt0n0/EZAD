@@ -3,6 +3,13 @@ import type { ADUser, ADSearchResult } from "@/types/ad";
 
 const USER_PROPS = "SamAccountName,DistinguishedName,Name,DisplayName,GivenName,Surname,UserPrincipalName,EmailAddress,Title,Department,Company,Enabled,LockedOut,LastLogonDate,Created,Modified,MemberOf,ObjectGUID,CanonicalName,Description,OfficePhone,MobilePhone,Manager,StreetAddress,City,State,PostalCode,Country,Office,PasswordExpired,PasswordNeverExpires";
 
+function normalizeUser(u: ADUser): ADUser {
+  if (u.MemberOf != null && !Array.isArray(u.MemberOf)) {
+    (u as Record<string, unknown>).MemberOf = [u.MemberOf];
+  }
+  return u;
+}
+
 export async function listUsers(ouDN?: string, search?: string): Promise<ADUser[]> {
   const searchBase = ouDN ? `-SearchBase '${sanitizeForPS(ouDN, "dn")}'` : "";
   const filter = search
@@ -16,7 +23,8 @@ Get-ADUser ${filter} ${searchBase} -Properties ${USER_PROPS} |
   ${toJson(3)}
 `);
 
-  return Array.isArray(raw) ? raw : raw ? [raw] : [];
+  const arr = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  return arr.map(normalizeUser);
 }
 
 export async function getUser(id: string): Promise<ADUser> {
@@ -27,7 +35,7 @@ Get-ADUser -Identity '${safeId}' -Properties * |
   Select-Object ${USER_PROPS} |
   ${toJson(5)}
 `);
-  return raw;
+  return normalizeUser(raw);
 }
 
 export interface CreateUserInput {

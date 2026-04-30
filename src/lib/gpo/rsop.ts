@@ -5,19 +5,26 @@ import { XMLParser } from "fast-xml-parser";
 export async function getRSoP(username: string, computer?: string): Promise<RSoPResult> {
   const safeUser = sanitizeForPS(username, "samAccountName");
 
-  let xmlOutput: string;
+  const computerLine = computer
+    ? `-Computer '${sanitizeForPS(computer, "samAccountName")}'`
+    : "";
 
-  if (computer) {
-    const safeComp = sanitizeForPS(computer, "samAccountName");
+  let xmlOutput: string;
+  try {
     xmlOutput = await runPSRaw(`
 Import-Module GroupPolicy -ErrorAction Stop
-Get-GPResultantSetOfPolicy -User '${safeUser}' -Computer '${safeComp}' -ReportType XML
+$tmp = [System.IO.Path]::Combine($env:TEMP, [System.Guid]::NewGuid().ToString() + '.xml')
+try {
+    Get-GPResultantSetOfPolicy -User '${safeUser}' ${computerLine} -ReportType XML -Path $tmp | Out-Null
+    if (Test-Path $tmp) {
+        Get-Content -Path $tmp -Raw -Encoding UTF8
+    }
+} finally {
+    if (Test-Path $tmp) { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
+}
 `);
-  } else {
-    xmlOutput = await runPSRaw(`
-Import-Module GroupPolicy -ErrorAction Stop
-Get-GPResultantSetOfPolicy -User '${safeUser}' -ReportType XML
-`);
+  } catch {
+    return { user: username, computer, appliedGPOs: [], deniedGPOs: [], generatedAt: new Date().toISOString() };
   }
 
   return parseRSoPXml(xmlOutput.trim(), username, computer);

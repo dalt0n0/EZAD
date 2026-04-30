@@ -2,6 +2,15 @@ import { runPS, runPSRaw, sanitizeForPS, toJson } from "@/lib/powershell";
 import type { GPO, GPOLink, GPOInheritance, GPOReport, GPOSetting } from "@/types/gpo";
 import { XMLParser } from "fast-xml-parser";
 
+const GPO_STATUS_MAP = ["AllSettingsEnabled", "UserSettingsDisabled", "ComputerSettingsDisabled", "AllSettingsDisabled"] as const;
+
+function normalizeGPO(gpo: GPO): GPO {
+  if (typeof (gpo.GpoStatus as unknown) === "number") {
+    gpo.GpoStatus = GPO_STATUS_MAP[(gpo.GpoStatus as unknown as number)] ?? "AllSettingsEnabled";
+  }
+  return gpo;
+}
+
 export async function listGPOs(): Promise<GPO[]> {
   const raw = await runPS<GPO[]>(`
 Import-Module GroupPolicy -ErrorAction Stop
@@ -9,7 +18,8 @@ Get-GPO -All |
   Select-Object DisplayName,Id,DomainName,Owner,GpoStatus,Description,CreationTime,ModificationTime,UserVersion,ComputerVersion,WmiFilter |
   ${toJson(4)}
 `);
-  return Array.isArray(raw) ? raw : raw ? [raw] : [];
+  const arr = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  return arr.map(normalizeGPO);
 }
 
 export async function getGPO(id: string): Promise<GPO> {
@@ -20,7 +30,7 @@ Get-GPO -Guid '${safeId}' |
   Select-Object DisplayName,Id,DomainName,Owner,GpoStatus,Description,CreationTime,ModificationTime,UserVersion,ComputerVersion,WmiFilter |
   ${toJson(4)}
 `);
-  return raw;
+  return normalizeGPO(raw);
 }
 
 export async function getGPOLinks(ouDN: string): Promise<GPOLink[]> {
