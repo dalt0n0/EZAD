@@ -6,6 +6,7 @@
     Fresh install: clones the repo, installs dependencies, builds, registers a
     Windows Scheduled Task (SYSTEM), and opens the firewall.
     Update: pulls latest code, rebuilds, and restarts the task.
+    Credentials are stored as a bcrypt hash -- never plaintext.
 
 .PARAMETER InstallPath
     Where to install EZ AD. Defaults to C:\EzAD
@@ -17,20 +18,24 @@
     Admin username for the web UI. Defaults to "admin".
 
 .PARAMETER Password
-    Admin password for the web UI. Required for fresh install.
+    Admin password for the web UI. Required for fresh install; prompted if omitted.
 
 .PARAMETER Secret
     JWT signing secret. Auto-generated if not provided.
 
+.PARAMETER ADGroup
+    Active Directory group whose members may log in with their domain credentials.
+    Defaults to "Domain Admins". Set to "" to disable AD authentication.
+
 .PARAMETER RepoUrl
-    Git repository URL. Defaults to the official EZ AD repo.
+    Git repository URL.
 
 .PARAMETER Update
     Pull latest code and rebuild without changing credentials or re-registering
     the scheduled task.
 
 .EXAMPLE
-    .\install.ps1 -Password "MySecureP@ss!"
+    irm https://raw.githubusercontent.com/dalt0n0/EZAD/main/install.ps1 | iex
     .\install.ps1 -Update
     .\install.ps1 -Password x -Uninstall
 #>
@@ -41,6 +46,7 @@ param(
     [string]$Username = "admin",
     [string]$Password = "",
     [string]$Secret = "",
+    [string]$ADGroup = "Domain Admins",
     [string]$RepoUrl = "https://github.com/dalt0n0/EZAD.git",
     [switch]$Update,
     [switch]$SkipFirewall,
@@ -132,8 +138,8 @@ if ($Update) {
     Write-Step "Pulling latest code"
     Push-Location $InstallPath
     try {
-        $pullOut = git pull 2>&1
-        Write-OK $pullOut
+        git pull
+        if ($LASTEXITCODE -ne 0) { Write-Fail "git pull failed." }
     } finally {
         Pop-Location
     }
@@ -141,8 +147,8 @@ if ($Update) {
     Write-Step "Installing dependencies"
     Push-Location $InstallPath
     try {
-        npm ci 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) { npm install 2>&1 | Out-Null }
+        npm ci *>$null
+        if ($LASTEXITCODE -ne 0) { npm install *>$null }
         Write-OK "Dependencies up to date"
     } finally {
         Pop-Location
@@ -151,7 +157,7 @@ if ($Update) {
     Write-Step "Building"
     Push-Location $InstallPath
     try {
-        npm run build 2>&1 | Out-Null
+        npm run build *>$null
         if ($LASTEXITCODE -ne 0) { Write-Fail "Build failed. Check Node.js version." }
         Write-OK "Build successful"
     } finally {
@@ -185,17 +191,16 @@ Write-Step "Cloning repository"
 if (Test-Path "$InstallPath\.git") {
     Write-OK "Repo already cloned at $InstallPath -- skipping clone"
 } elseif (Test-Path $InstallPath) {
-    # Directory exists but no git repo -- clone into it
     Push-Location $InstallPath
     try {
-        git clone $RepoUrl . 2>&1 | Out-Null
+        git clone $RepoUrl .
         if ($LASTEXITCODE -ne 0) { Write-Fail "Git clone failed." }
         Write-OK "Cloned into existing directory"
     } finally {
         Pop-Location
     }
 } else {
-    git clone $RepoUrl $InstallPath 2>&1 | Out-Null
+    git clone $RepoUrl $InstallPath
     if ($LASTEXITCODE -ne 0) { Write-Fail "Git clone failed." }
     Write-OK "Cloned to $InstallPath"
 }
@@ -204,18 +209,33 @@ if (Test-Path "$InstallPath\.git") {
 Write-Step "Installing dependencies (this may take a minute)"
 Push-Location $InstallPath
 try {
-    npm ci 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { npm install 2>&1 | Out-Null }
+    npm ci *>$null
+    if ($LASTEXITCODE -ne 0) { npm install *>$null }
     Write-OK "Dependencies installed"
 } finally {
     Pop-Location
 }
 
+# -- Hash the admin password --------------------------------------------------
+Write-Step "Hashing admin password"
+
+$env:EZAD_SETUP_PASS = $Password
+try {
+    $hash = node "$InstallPath\scripts\hash-password.mjs" 2>&1
+    if ($LASTEXITCODE -ne 0) { Write-Fail "Password hashing failed: $hash" }
+    Write-OK "Password hashed (bcrypt, cost 12)"
+} finally {
+    Remove-Item Env:EZAD_SETUP_PASS -ErrorAction SilentlyContinue
+}
+
+# Clear plaintext password from memory as soon as we have the hash
+$Password = $null
+
 # -- Build --------------------------------------------------------------------
 Write-Step "Building EZ AD (1-2 minutes)"
 Push-Location $InstallPath
 try {
-    npm run build 2>&1 | Out-Null
+    npm run build *>$null
     if ($LASTEXITCODE -ne 0) { Write-Fail "Build failed. Check Node.js version." }
     Write-OK "Build successful"
 } finally {
@@ -233,24 +253,31 @@ $secretValue = if ($Secret) {
     )
 }
 
-$envContent = "EZAD_USERNAME=$Username`r`nEZAD_PASSWORD=$Password`r`nEZAD_SECRET=$secretValue`r`nPORT=$Port"
+$envLines = @(
+    "EZAD_USERNAME=$Username",
+    "EZAD_PASSWORD_HASH=$hash",
+    "EZAD_SECRET=$secretValue",
+    "EZAD_AD_GROUP=$ADGroup",
+    "PORT=$Port"
+)
+$envContent = $envLines -join "`r`n"
 [System.IO.File]::WriteAllText("$InstallPath\.env.local", $envContent, [System.Text.Encoding]::UTF8)
-Write-OK ".env.local written"
+Write-OK ".env.local written (password stored as bcrypt hash)"
 
 # -- Scheduled Task -----------------------------------------------------------
 Write-Step "Registering startup task (runs as SYSTEM)"
 
-$nodePath  = (Get-Command node).Source
-$nextBin   = "$InstallPath\node_modules\next\dist\bin\next"
-
-# Write a wrapper so env vars are set before next starts
+$nextBin    = "$InstallPath\node_modules\next\dist\bin\next"
 $wrapperPs1 = "$InstallPath\start-ezad.ps1"
+
+# Wrapper sets runtime env vars -- hash is safe to store, no plaintext password
 $wrapperLines = @(
-    "`$env:EZAD_USERNAME = '$Username'",
-    "`$env:EZAD_PASSWORD = '$Password'",
-    "`$env:EZAD_SECRET   = '$secretValue'",
-    "`$env:PORT          = '$Port'",
-    "`$env:HOSTNAME      = '0.0.0.0'",
+    "`$env:EZAD_USERNAME      = '$Username'",
+    "`$env:EZAD_PASSWORD_HASH = '$hash'",
+    "`$env:EZAD_SECRET        = '$secretValue'",
+    "`$env:EZAD_AD_GROUP      = '$ADGroup'",
+    "`$env:PORT               = '$Port'",
+    "`$env:HOSTNAME           = '0.0.0.0'",
     "Set-Location '$InstallPath'",
     "& node '$nextBin' start --port $Port"
 )
@@ -299,8 +326,8 @@ Write-Host "  ============================================" -ForegroundColor Gre
 Write-Host ""
 Write-Host "  URL:      http://${hostname}:${Port}" -ForegroundColor Green
 Write-Host "  Also:     http://localhost:${Port}" -ForegroundColor Green
-Write-Host "  Username: $Username" -ForegroundColor Green
-Write-Host "  Password: (as provided)" -ForegroundColor Green
+Write-Host "  Username: $Username (local admin)" -ForegroundColor Green
+Write-Host "  AD login: members of '$ADGroup'" -ForegroundColor Green
 Write-Host ""
 Write-Host "  To update:  .\install.ps1 -Update"
 Write-Host "  To stop:    Stop-ScheduledTask -TaskName '$TaskName'"

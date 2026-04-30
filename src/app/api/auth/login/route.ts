@@ -9,7 +9,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Username and password required" }, { status: 400 });
     }
 
-    if (!validateCredentials(username, password)) {
+    if (!(await validateCredentials(username, password))) {
       await new Promise((r) => setTimeout(r, 500)); // prevent brute force timing
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }

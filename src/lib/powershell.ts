@@ -11,7 +11,10 @@ export class PowerShellError extends Error {
   }
 }
 
-export async function runPS<T = unknown>(script: string): Promise<T> {
+export async function runPS<T = unknown>(
+  script: string,
+  opts?: { env?: Record<string, string> }
+): Promise<T> {
   return new Promise((resolve, reject) => {
     const fullScript = `
 $ErrorActionPreference = 'Stop'
@@ -33,7 +36,7 @@ try {
       fullScript,
     ], {
       windowsHide: true,
-      env: { ...process.env, TERM: "dumb" },
+      env: { ...process.env, TERM: "dumb", ...opts?.env },
     });
 
     let stdout = "";
