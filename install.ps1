@@ -56,6 +56,15 @@ param(
 $ErrorActionPreference = "Stop"
 $TaskName = "EzAD"
 
+# Helper: run a native command with stdout suppressed.
+# Does NOT redirect stderr so PowerShell 5.1 never creates NativeCommandError records.
+function Invoke-Native {
+    param([scriptblock]$Cmd)
+    $savedEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try { & $Cmd | Out-Null } finally { $ErrorActionPreference = $savedEAP }
+}
+
 # Require admin
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
     [Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -147,8 +156,8 @@ if ($Update) {
     Write-Step "Installing dependencies"
     Push-Location $InstallPath
     try {
-        npm ci *>$null
-        if ($LASTEXITCODE -ne 0) { npm install *>$null }
+        Invoke-Native { npm ci }
+        if ($LASTEXITCODE -ne 0) { Invoke-Native { npm install } }
         Write-OK "Dependencies up to date"
     } finally {
         Pop-Location
@@ -157,7 +166,7 @@ if ($Update) {
     Write-Step "Building"
     Push-Location $InstallPath
     try {
-        npm run build *>$null
+        Invoke-Native { npm run build }
         if ($LASTEXITCODE -ne 0) { Write-Fail "Build failed. Check Node.js version." }
         Write-OK "Build successful"
     } finally {
@@ -221,8 +230,9 @@ Write-Step "Hashing admin password"
 
 $env:EZAD_SETUP_PASS = $Password
 try {
-    $hash = node "$InstallPath\scripts\hash-password.mjs" 2>&1
-    if ($LASTEXITCODE -ne 0) { Write-Fail "Password hashing failed: $hash" }
+    # Capture stdout only; stderr goes to host without triggering NativeCommandError
+    $hash = (node "$InstallPath\scripts\hash-password.mjs")
+    if ($LASTEXITCODE -ne 0 -or -not $hash) { Write-Fail "Password hashing failed." }
     Write-OK "Password hashed (bcrypt, cost 12)"
 } finally {
     Remove-Item Env:EZAD_SETUP_PASS -ErrorAction SilentlyContinue
