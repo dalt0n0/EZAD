@@ -136,6 +136,12 @@ if ($Update) {
         Write-Fail "No git repo found at $InstallPath. Run without -Update to do a fresh install."
     }
 
+    # Stop the running service first so node releases the locked .node files
+    Write-Step "Stopping EZ AD"
+    Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 3
+    Write-OK "Task stopped"
+
     Write-Step "Pulling latest code"
     Push-Location $InstallPath
     try {
@@ -166,8 +172,6 @@ if ($Update) {
     }
 
     Write-Step "Restarting EZ AD"
-    Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 2
     Start-ScheduledTask -TaskName $TaskName
     Start-Sleep -Seconds 3
     Write-OK "Task restarted: $((Get-ScheduledTask -TaskName $TaskName).State)"
