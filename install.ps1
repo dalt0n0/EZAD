@@ -1,4 +1,3 @@
-#Requires -RunAsAdministrator
 <#
 .SYNOPSIS
     EZ AD -- Install or update from GitHub.
@@ -50,6 +49,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 $TaskName = "EzAD"
+
+# Require admin
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+    [Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    Write-Host "ERROR: Run this script from an elevated (Administrator) PowerShell prompt." -ForegroundColor Red
+    exit 1
+}
 
 function Write-Step { param($msg) Write-Host "`n>> $msg" -ForegroundColor Cyan }
 function Write-OK   { param($msg) Write-Host "   [OK] $msg" -ForegroundColor Green }
@@ -164,9 +171,12 @@ if ($Update) {
     exit 0
 }
 
-# -- Fresh install: validate password -----------------------------------------
+# -- Fresh install: prompt for password if not provided -----------------------
 if (-not $Password) {
-    Write-Fail "Password is required. Use: .\install.ps1 -Password 'YourPassword'"
+    $securePass = Read-Host "  Enter web UI password for '$Username'" -AsSecureString
+    $Password = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+        [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePass))
+    if (-not $Password) { Write-Fail "Password cannot be empty." }
 }
 
 # -- Clone repo ---------------------------------------------------------------
