@@ -43,25 +43,41 @@ async function validateLocalAdmin(username: string, password: string): Promise<b
   const hash = process.env.EZAD_PASSWORD_HASH;
   if (hash) return compare(password, hash);
 
-  // Legacy plaintext fallback — remove after re-running install.ps1
+  // Legacy plaintext fallback — re-run install.ps1 to migrate
   const plain = process.env.EZAD_PASSWORD;
   if (plain) return password === plain;
 
   return false;
 }
 
-// Active Directory authentication via PrincipalContext.ValidateCredentials.
-// User must be a member of EZAD_AD_GROUP (defaults to "Domain Admins").
-// Credentials are passed through process env vars, never interpolated into the script.
+// Strip DOMAIN\ prefix or @domain suffix so we always work with the SAM account name.
+function normalizeSam(username: string): string {
+  if (username.includes("\\")) return username.split("\\")[1];
+  if (username.includes("@"))  return username.split("@")[0];
+  return username;
+}
+
+// Active Directory authentication.
+// Validates credentials via PrincipalContext, then checks group membership
+// using Get-ADGroupMember -Recursive (more reliable than IsMemberOf for
+// built-in groups like Domain Admins).
+// Credentials flow through process env vars — never interpolated into the script.
 async function validateADCredentials(username: string, password: string): Promise<boolean> {
-  const allowedGroup = (process.env.EZAD_AD_GROUP ?? "Domain Admins").replace(/'/g, "''");
+  const adGroup = process.env.EZAD_AD_GROUP;
+
+  // Empty string means AD auth explicitly disabled
+  if (adGroup === "") return false;
+
+  const allowedGroup = (adGroup ?? "Domain Admins").replace(/'/g, "''");
+  const sam = normalizeSam(username).replace(/'/g, "''");
 
   try {
-    const result = await runPS<{ valid: boolean; authorized: boolean }>(
+    const result = await runPS<{ valid: boolean; authorized: boolean; error?: string }>(
       `
 $u = $env:EZAD_AUTH_USER
 $p = $env:EZAD_AUTH_PASS
 
+# Validate credentials against the domain
 Add-Type -AssemblyName System.DirectoryServices.AccountManagement
 $ctx = New-Object System.DirectoryServices.AccountManagement.PrincipalContext(
     [System.DirectoryServices.AccountManagement.ContextType]::Domain)
@@ -72,26 +88,45 @@ if (-not $isValid) {
     return
 }
 
-$user  = [System.DirectoryServices.AccountManagement.UserPrincipal]::FindByIdentity($ctx, $u)
-$group = [System.DirectoryServices.AccountManagement.GroupPrincipal]::FindByIdentity($ctx, '${allowedGroup}')
-$ok    = $user -ne $null -and $group -ne $null -and $user.IsMemberOf($group)
+# Check group membership using AD module (handles recursive and protected groups)
+Import-Module ActiveDirectory -ErrorAction SilentlyContinue
 
-@{ valid = $true; authorized = [bool]$ok } | ConvertTo-Json -Compress
+$isMember = $false
+try {
+    $members = Get-ADGroupMember -Identity '${allowedGroup}' -Recursive -ErrorAction Stop
+    $isMember = [bool]($members | Where-Object { $_.SamAccountName -eq '${sam}' })
+} catch {
+    # Group not found or AD error — deny for safety, log reason
+    @{ valid = $true; authorized = $false; error = $_.Exception.Message } | ConvertTo-Json -Compress
+    return
+}
+
+@{ valid = $true; authorized = [bool]$isMember } | ConvertTo-Json -Compress
       `,
       { env: { EZAD_AUTH_USER: username, EZAD_AUTH_PASS: password } }
     );
 
+    if (result?.error) {
+      console.error("[AD auth] Group check error:", result.error);
+    }
+
     return result?.valid === true && result?.authorized === true;
-  } catch {
+  } catch (err) {
+    console.error("[AD auth] PowerShell error:", err instanceof Error ? err.message : err);
     return false;
   }
 }
 
 // Main entry point called by the login route.
-// Local admin is checked first (works even if AD is unreachable).
+// Local admin is checked first (works even when AD is unreachable).
 // All other usernames go through AD.
 export async function validateCredentials(username: string, password: string): Promise<boolean> {
   const localAdmin = process.env.EZAD_USERNAME ?? "admin";
-  if (username === localAdmin) return validateLocalAdmin(username, password);
+
+  // Normalize so "DOMAIN\admin" still matches the local admin account
+  if (normalizeSam(username) === localAdmin) {
+    return validateLocalAdmin(localAdmin, password);
+  }
+
   return validateADCredentials(username, password);
 }
