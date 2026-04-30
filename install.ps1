@@ -56,14 +56,6 @@ param(
 $ErrorActionPreference = "Stop"
 $TaskName = "EzAD"
 
-# Helper: run a native command with stdout suppressed.
-# Does NOT redirect stderr so PowerShell 5.1 never creates NativeCommandError records.
-function Invoke-Native {
-    param([scriptblock]$Cmd)
-    $savedEAP = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    try { & $Cmd | Out-Null } finally { $ErrorActionPreference = $savedEAP }
-}
 
 # Require admin
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
@@ -156,8 +148,8 @@ if ($Update) {
     Write-Step "Installing dependencies"
     Push-Location $InstallPath
     try {
-        Invoke-Native { npm ci }
-        if ($LASTEXITCODE -ne 0) { Invoke-Native { npm install } }
+        npm ci --loglevel=error
+        if ($LASTEXITCODE -ne 0) { npm install --loglevel=error }
         Write-OK "Dependencies up to date"
     } finally {
         Pop-Location
@@ -166,7 +158,7 @@ if ($Update) {
     Write-Step "Building"
     Push-Location $InstallPath
     try {
-        Invoke-Native { npm run build }
+        npm run build
         if ($LASTEXITCODE -ne 0) { Write-Fail "Build failed. Check Node.js version." }
         Write-OK "Build successful"
     } finally {
