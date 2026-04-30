@@ -1,0 +1,6 @@
+node_modules/
+.next/
+.env.local
+*.ps1~
+EzAD-release.zip
+.claude/
