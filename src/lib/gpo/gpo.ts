@@ -2,11 +2,11 @@ import { runPS, runPSRaw, sanitizeForPS, toJson } from "@/lib/powershell";
 import type { GPO, GPOLink, GPOInheritance, GPOReport, GPOSetting } from "@/types/gpo";
 import { XMLParser } from "fast-xml-parser";
 
-const GPO_STATUS_MAP = ["AllSettingsEnabled", "UserSettingsDisabled", "ComputerSettingsDisabled", "AllSettingsDisabled"] as const;
-
 function normalizeGPO(gpo: GPO): GPO {
-  if (typeof (gpo.GpoStatus as unknown) === "number") {
-    gpo.GpoStatus = GPO_STATUS_MAP[(gpo.GpoStatus as unknown as number)] ?? "AllSettingsEnabled";
+  const status = gpo.GpoStatus as unknown;
+  if (typeof status === "number") {
+    const names: GPO["GpoStatus"][] = ["AllSettingsEnabled", "UserSettingsDisabled", "ComputerSettingsDisabled", "AllSettingsDisabled"];
+    gpo.GpoStatus = names[status] ?? "AllSettingsEnabled";
   }
   return gpo;
 }

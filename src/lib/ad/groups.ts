@@ -3,15 +3,16 @@ import type { ADGroup, ADGroupMember, ADSearchResult } from "@/types/ad";
 
 const GROUP_PROPS = "Name,SamAccountName,DistinguishedName,GroupCategory,GroupScope,Description,Created,Modified,MemberOf,ObjectGUID,CanonicalName,ManagedBy";
 
-const GROUP_CATEGORY_MAP = ["Security", "Distribution"] as const;
-const GROUP_SCOPE_MAP = ["DomainLocal", "Global", "Universal"] as const;
-
 function normalizeGroup(g: ADGroup): ADGroup {
-  if (typeof (g.GroupCategory as unknown) === "number") {
-    g.GroupCategory = GROUP_CATEGORY_MAP[(g.GroupCategory as unknown as number)] ?? "Security";
+  const cat = g.GroupCategory as unknown;
+  if (typeof cat === "number") {
+    const cats: ADGroup["GroupCategory"][] = ["Security", "Distribution"];
+    g.GroupCategory = cats[cat] ?? "Security";
   }
-  if (typeof (g.GroupScope as unknown) === "number") {
-    g.GroupScope = GROUP_SCOPE_MAP[(g.GroupScope as unknown as number)] ?? "Global";
+  const scope = g.GroupScope as unknown;
+  if (typeof scope === "number") {
+    const scopes: ADGroup["GroupScope"][] = ["DomainLocal", "Global", "Universal"];
+    g.GroupScope = scopes[scope] ?? "Global";
   }
   if (g.MemberOf != null && !Array.isArray(g.MemberOf)) {
     (g as Record<string, unknown>).MemberOf = [g.MemberOf];

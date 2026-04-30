@@ -9,7 +9,7 @@ export async function getRSoP(username: string, computer?: string): Promise<RSoP
     ? `-Computer '${sanitizeForPS(computer, "samAccountName")}'`
     : "";
 
-  let xmlOutput: string;
+  let xmlOutput = "";
   try {
     xmlOutput = await runPSRaw(`
 Import-Module GroupPolicy -ErrorAction Stop
