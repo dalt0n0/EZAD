@@ -15,7 +15,7 @@ function normalizeGroup(g: ADGroup): ADGroup {
     g.GroupScope = scopes[scope] ?? "Global";
   }
   if (g.MemberOf != null && !Array.isArray(g.MemberOf)) {
-    (g as Record<string, unknown>).MemberOf = [g.MemberOf];
+    (g as unknown as Record<string, unknown>).MemberOf = [g.MemberOf];
   }
   return g;
 }

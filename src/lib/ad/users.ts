@@ -5,7 +5,7 @@ const USER_PROPS = "SamAccountName,DistinguishedName,Name,DisplayName,GivenName,
 
 function normalizeUser(u: ADUser): ADUser {
   if (u.MemberOf != null && !Array.isArray(u.MemberOf)) {
-    (u as Record<string, unknown>).MemberOf = [u.MemberOf];
+    (u as unknown as Record<string, unknown>).MemberOf = [u.MemberOf];
   }
   return u;
 }

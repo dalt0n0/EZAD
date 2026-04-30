@@ -5,7 +5,7 @@ const COMP_PROPS = "Name,SamAccountName,DistinguishedName,DNSHostName,Enabled,Op
 
 function normalizeComputer(c: ADComputer): ADComputer {
   if (c.MemberOf != null && !Array.isArray(c.MemberOf)) {
-    (c as Record<string, unknown>).MemberOf = [c.MemberOf];
+    (c as unknown as Record<string, unknown>).MemberOf = [c.MemberOf];
   }
   return c;
 }
