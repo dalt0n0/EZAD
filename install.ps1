@@ -130,6 +130,20 @@ if (-not $gpModule) {
     Write-OK "GroupPolicy module found"
 }
 
+# -- Check/Install PSPKI (optional, needed for Certificate Services) ----------
+$pspkiModule = Get-Module -ListAvailable -Name PSPKI
+if (-not $pspkiModule) {
+    Write-Warn "PSPKI module not found -- Certificate Services features will fail. Attempting install..."
+    try {
+        Install-Module -Name PSPKI -Force -Scope AllUsers -SkipPublisherCheck -ErrorAction Stop
+        Write-OK "PSPKI module installed"
+    } catch {
+        Write-Warn "PSPKI install failed: $_  (Certificate Services will be unavailable)"
+    }
+} else {
+    Write-OK "PSPKI module: $($pspkiModule.Version)"
+}
+
 # -- Update path --------------------------------------------------------------
 if ($Update) {
     if (-not (Test-Path "$InstallPath\.git")) {

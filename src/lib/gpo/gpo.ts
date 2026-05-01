@@ -101,6 +101,64 @@ $links | ${toJson(3)}
   }
 }
 
+export async function createGPO(name: string, comment?: string): Promise<GPO> {
+  const safeName = sanitizeForPS(name);
+  const commentPart = comment ? `-Comment '${sanitizeForPS(comment)}'` : "";
+  const raw = await runPS<GPO>(`
+Import-Module GroupPolicy -ErrorAction Stop
+New-GPO -Name '${safeName}' ${commentPart} |
+  Select-Object DisplayName,Id,DomainName,Owner,GpoStatus,Description,CreationTime,ModificationTime,UserVersion,ComputerVersion,WmiFilter |
+  ${toJson(4)}
+`);
+  return normalizeGPO(raw);
+}
+
+export async function updateGPO(id: string, input: { GpoStatus?: GPO["GpoStatus"]; Description?: string }): Promise<GPO> {
+  const safeId = sanitizeForPS(id, "guid");
+  const parts: string[] = [];
+  if (input.GpoStatus !== undefined) parts.push(`-Status ${input.GpoStatus}`);
+  if (input.Description !== undefined) parts.push(`-Comment '${sanitizeForPS(input.Description)}'`);
+  const setLine = parts.length > 0 ? `Set-GPO -Guid '${safeId}' ${parts.join(" ")}` : "";
+  const raw = await runPS<GPO>(`
+Import-Module GroupPolicy -ErrorAction Stop
+${setLine}
+Get-GPO -Guid '${safeId}' |
+  Select-Object DisplayName,Id,DomainName,Owner,GpoStatus,Description,CreationTime,ModificationTime,UserVersion,ComputerVersion,WmiFilter |
+  ${toJson(4)}
+`);
+  return normalizeGPO(raw);
+}
+
+export async function deleteGPO(id: string): Promise<void> {
+  const safeId = sanitizeForPS(id, "guid");
+  await runPS(`
+Import-Module GroupPolicy -ErrorAction Stop
+Remove-GPO -Guid '${safeId}' -Confirm:$false
+Write-Output 'null'
+`);
+}
+
+export async function linkGPO(id: string, ouDN: string, enforced = false): Promise<void> {
+  const safeId = sanitizeForPS(id, "guid");
+  const safeDN = sanitizeForPS(ouDN, "dn");
+  const enforcedVal = enforced ? "Yes" : "No";
+  await runPS(`
+Import-Module GroupPolicy -ErrorAction Stop
+New-GPLink -Guid '${safeId}' -Target '${safeDN}' -LinkEnabled Yes -Enforced ${enforcedVal}
+Write-Output 'null'
+`);
+}
+
+export async function unlinkGPO(id: string, ouDN: string): Promise<void> {
+  const safeId = sanitizeForPS(id, "guid");
+  const safeDN = sanitizeForPS(ouDN, "dn");
+  await runPS(`
+Import-Module GroupPolicy -ErrorAction Stop
+Remove-GPLink -Guid '${safeId}' -Target '${safeDN}' -Confirm:$false
+Write-Output 'null'
+`);
+}
+
 function parseGPOSettingsFromXml(xml: string): GPOSetting[] {
   if (!xml) return [];
 

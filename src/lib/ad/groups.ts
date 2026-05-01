@@ -20,14 +20,15 @@ function normalizeGroup(g: ADGroup): ADGroup {
   return g;
 }
 
-export async function listGroups(search?: string): Promise<ADGroup[]> {
+export async function listGroups(search?: string, ouDN?: string): Promise<ADGroup[]> {
+  const searchBase = ouDN ? `-SearchBase '${sanitizeForPS(ouDN, "dn")}'` : "";
   const filter = search
     ? `-Filter {(Name -like '*${sanitizeForPS(search)}*') -or (SamAccountName -like '*${sanitizeForPS(search)}*')}`
     : `-Filter *`;
 
   const raw = await runPS<ADGroup[]>(`
 Import-Module ActiveDirectory -ErrorAction Stop
-Get-ADGroup ${filter} -Properties ${GROUP_PROPS} |
+Get-ADGroup ${filter} ${searchBase} -Properties ${GROUP_PROPS} |
   Select-Object ${GROUP_PROPS} |
   ${toJson(3)}
 `);

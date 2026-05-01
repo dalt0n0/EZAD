@@ -9,6 +9,7 @@ import {
   Monitor,
   ChevronRight,
   LogOut,
+  BadgeCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -32,6 +33,11 @@ const navItems = [
     label: "Group Policy",
     href: "/gpo",
     icon: Shield,
+  },
+  {
+    label: "Certificate Services",
+    href: "/adcs",
+    icon: BadgeCheck,
   },
 ];
 

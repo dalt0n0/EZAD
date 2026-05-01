@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -13,15 +13,30 @@ import {
   AlertCircle,
   Search,
   Building2,
+  Pencil,
+  Trash2,
+  Plus,
+  X,
 } from "lucide-react";
+import { toast } from "sonner";
 import { TopBar } from "@/components/layout/TopBar";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { EditGPODialog } from "@/components/gpo/EditGPODialog";
 import { formatDate } from "@/lib/utils";
 import type { GPOReport } from "@/types/gpo";
+import type { ADOU } from "@/types/ad";
 
 const statusVariant = {
   AllSettingsEnabled: "success" as const,
@@ -42,11 +57,69 @@ function PropRow({ label, value }: { label: string; value?: string | null }) {
 export default function GPODetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [settingSearch, setSettingSearch] = useState("");
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [addLinkOU, setAddLinkOU] = useState("");
+  const [addLinkEnforced, setAddLinkEnforced] = useState(false);
 
   const { data: report, isLoading, error } = useQuery<GPOReport>({
     queryKey: ["gpo-report", id],
     queryFn: () => fetch(`/api/gpo/${encodeURIComponent(id)}?report=true`).then((r) => r.json()),
+  });
+
+  const { data: ousRaw } = useQuery({
+    queryKey: ["ous"],
+    queryFn: () => fetch("/api/ad/ous").then((r) => r.json()),
+  });
+  const ous: ADOU[] = Array.isArray(ousRaw) ? ousRaw : [];
+
+  const deleteMut = useMutation({
+    mutationFn: () =>
+      fetch(`/api/gpo/${encodeURIComponent(id)}`, { method: "DELETE" }).then(async (r) => {
+        if (!r.ok) throw new Error((await r.json()).error ?? "Delete failed");
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["gpos"] });
+      toast.success("GPO deleted");
+      router.push("/gpo");
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Delete failed"),
+  });
+
+  const addLinkMut = useMutation({
+    mutationFn: ({ ouDN, enforced }: { ouDN: string; enforced: boolean }) =>
+      fetch(`/api/gpo/${encodeURIComponent(id)}/links`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ouDN, enforced }),
+      }).then(async (r) => {
+        if (!r.ok) throw new Error((await r.json()).error ?? "Link failed");
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["gpo-report", id] });
+      toast.success("Link added");
+      setAddLinkOU("");
+      setAddLinkEnforced(false);
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Link failed"),
+  });
+
+  const removeLinkMut = useMutation({
+    mutationFn: (ouDN: string) =>
+      fetch(`/api/gpo/${encodeURIComponent(id)}/links`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ouDN }),
+      }).then(async (r) => {
+        if (!r.ok) throw new Error((await r.json()).error ?? "Unlink failed");
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["gpo-report", id] });
+      toast.success("Link removed");
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Unlink failed"),
   });
 
   const filteredSettings = useMemo(() => {
@@ -95,6 +168,8 @@ export default function GPODetailPage({ params }: { params: Promise<{ id: string
   return (
     <div className="flex flex-col min-h-screen">
       <TopBar />
+      {editOpen && <EditGPODialog open={editOpen} onOpenChange={setEditOpen} gpo={gpo} />}
+
       <div className="pt-14 p-6 max-w-6xl">
         <button
           onClick={() => router.push("/gpo")}
@@ -111,10 +186,33 @@ export default function GPODetailPage({ params }: { params: Promise<{ id: string
             <h1 className="text-xl font-bold text-foreground">{gpo.DisplayName}</h1>
             <p className="text-sm text-muted-foreground font-mono text-xs">{gpo.Id}</p>
           </div>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
             <Badge variant={statusVariant[gpo.GpoStatus] ?? "secondary"}>
               {gpo.GpoStatus?.replace(/([A-Z])/g, " $1").trim() ?? "Unknown"}
             </Badge>
+            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setEditOpen(true)}>
+              <Pencil className="w-3.5 h-3.5" /> Edit
+            </Button>
+            {deleteConfirm ? (
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => deleteMut.mutate()}
+                  disabled={deleteMut.isPending}
+                >
+                  {deleteMut.isPending ? "Deleting…" : "Confirm Delete"}
+                </Button>
+                <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => setDeleteConfirm(false)}>
+                  Cancel
+                </Button>
+              </div>
+            ) : (
+              <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs text-destructive hover:text-destructive" onClick={() => setDeleteConfirm(true)}>
+                <Trash2 className="w-3.5 h-3.5" /> Delete
+              </Button>
+            )}
           </div>
         </div>
 
@@ -172,16 +270,54 @@ export default function GPODetailPage({ params }: { params: Promise<{ id: string
           {/* Links */}
           <TabsContent value="links">
             <div className="bg-card border border-border rounded-lg overflow-hidden">
-              <div className="px-4 py-2.5 border-b border-border">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              <div className="px-4 py-2.5 border-b border-border flex items-center gap-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex-1">
                   Linked To ({links.length} OUs / containers)
                 </p>
               </div>
+
+              {/* Add Link */}
+              <div className="px-4 py-3 border-b border-border bg-secondary/20">
+                <p className="text-xs font-medium text-muted-foreground mb-2">Add Link</p>
+                <div className="flex items-center gap-2">
+                  <Select value={addLinkOU} onValueChange={setAddLinkOU}>
+                    <SelectTrigger className="h-8 text-xs flex-1">
+                      <SelectValue placeholder="Select an OU…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ous.map((ou) => (
+                        <SelectItem key={ou.DistinguishedName} value={ou.DistinguishedName} className="text-xs">
+                          {ou.Name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer whitespace-nowrap">
+                    <input
+                      type="checkbox"
+                      checked={addLinkEnforced}
+                      onChange={(e) => setAddLinkEnforced(e.target.checked)}
+                      className="w-3.5 h-3.5"
+                    />
+                    Enforced
+                  </label>
+                  <Button
+                    size="sm"
+                    className="h-8 text-xs gap-1.5 shrink-0"
+                    disabled={!addLinkOU || addLinkMut.isPending}
+                    onClick={() => addLinkMut.mutate({ ouDN: addLinkOU, enforced: addLinkEnforced })}
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    {addLinkMut.isPending ? "Linking…" : "Link"}
+                  </Button>
+                </div>
+              </div>
+
               {links.length === 0 ? (
                 <div className="flex items-center gap-3 m-4 bg-secondary/50 border border-border rounded-lg p-4">
                   <AlertCircle className="w-4 h-4 text-muted-foreground shrink-0" />
                   <p className="text-sm text-muted-foreground">
-                    No links found. The GPO may not be linked to any OU, or link data requires additional permissions.
+                    No links found. Use the form above to link this GPO to an OU.
                   </p>
                 </div>
               ) : (
@@ -193,13 +329,22 @@ export default function GPODetailPage({ params }: { params: Promise<{ id: string
                         <p className="text-sm font-medium truncate">{link.Target}</p>
                         <p className="text-xs text-muted-foreground">Order: {link.Order}</p>
                       </div>
-                      <div className="flex gap-1.5 shrink-0">
+                      <div className="flex gap-1.5 items-center shrink-0">
                         {link.Enabled ? (
                           <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                         ) : (
                           <XCircle className="w-4 h-4 text-red-400" />
                         )}
                         {link.Enforced && <Badge variant="warning" className="text-[10px] py-0">Enforced</Badge>}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                          onClick={() => removeLinkMut.mutate(link.Target)}
+                          disabled={removeLinkMut.isPending}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </Button>
                       </div>
                     </div>
                   ))}

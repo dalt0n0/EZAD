@@ -10,6 +10,7 @@ import {
   XCircle,
   AlertCircle,
   ChevronRight,
+  Plus,
 } from "lucide-react";
 import {
   createColumnHelper,
@@ -26,6 +27,7 @@ import { SearchInput } from "@/components/shared/SearchInput";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CreateGPODialog } from "@/components/gpo/CreateGPODialog";
 import { cn, formatDate } from "@/lib/utils";
 import type { GPO } from "@/types/gpo";
 
@@ -87,6 +89,7 @@ export default function GPOPage() {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const { data: gpos = [], isLoading, error, refetch } = useQuery<GPO[]>({
     queryKey: ["gpos"],
@@ -112,6 +115,11 @@ export default function GPOPage() {
   return (
     <div className="flex flex-col min-h-screen">
       <TopBar title="Group Policy Management" />
+      <CreateGPODialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={(id) => router.push(`/gpo/${encodeURIComponent(id)}`)}
+      />
       <main className="flex-1 pt-14 p-6">
         {/* Stats row */}
         <div className="grid grid-cols-3 gap-4 mb-6">
@@ -152,6 +160,10 @@ export default function GPOPage() {
             />
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => refetch()}>
               <RefreshCw className={cn("w-3.5 h-3.5", isLoading && "animate-spin")} />
+            </Button>
+            <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => setCreateOpen(true)}>
+              <Plus className="w-3.5 h-3.5" />
+              New GPO
             </Button>
           </div>
 

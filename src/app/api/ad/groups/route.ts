@@ -5,9 +5,10 @@ import { z } from "zod";
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const search = searchParams.get("search") ?? undefined;
+  const ou = searchParams.get("ou") ?? undefined;
 
   try {
-    const data = await listGroups(search);
+    const data = await listGroups(search, ou);
     return NextResponse.json(data);
   } catch (error) {
     return NextResponse.json(

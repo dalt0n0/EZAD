@@ -28,14 +28,22 @@ const tabs: { id: TabType; label: string; icon: any; color: string }[] = [
 function ADUCContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [selectedOU, setSelectedOU] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [createUserOpen, setCreateUserOpen] = useState(false);
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
   const activeTab = (searchParams.get("tab") as TabType) ?? "users";
+  const selectedOU = searchParams.get("ou") ?? null;
 
   function setTab(tab: TabType) {
-    router.push(`/aduc?tab=${tab}`);
+    const ps = new URLSearchParams(searchParams.toString());
+    ps.set("tab", tab);
+    router.push(`/aduc?${ps}`);
+  }
+
+  function selectOU(dn: string | null) {
+    const ps = new URLSearchParams(searchParams.toString());
+    if (dn) ps.set("ou", dn); else ps.delete("ou");
+    router.push(`/aduc?${ps}`);
   }
 
   const { data: ousRaw, isLoading: ousLoading } = useQuery({
@@ -67,9 +75,10 @@ function ADUCContent() {
   const computers: ADComputer[] = Array.isArray(computersRaw) ? computersRaw : [];
 
   const { data: groupsRaw, isLoading: groupsLoading, refetch: refetchGroups } = useQuery({
-    queryKey: ["groups", search],
+    queryKey: ["groups", selectedOU, search],
     queryFn: () => {
       const params = new URLSearchParams();
+      if (selectedOU) params.set("ou", selectedOU);
       if (search) params.set("search", search);
       return fetch(`/api/ad/groups?${params}`).then((r) => r.json());
     },
@@ -103,7 +112,7 @@ function ADUCContent() {
           {ousLoading ? (
             <LoadingSpinner className="py-8" message="Loading OUs…" />
           ) : (
-            <OUTree ous={ous} selectedDN={selectedOU} onSelect={setSelectedOU} />
+            <OUTree ous={ous} selectedDN={selectedOU} onSelect={selectOU} />
           )}
         </ScrollArea>
       </aside>
